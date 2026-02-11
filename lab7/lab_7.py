@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.16.6
+#       jupytext_version: 1.17.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -130,14 +130,15 @@ print(f"Ratings range: {df.rating.min(), df.rating.max()}")
 #
 # W praktyce **nigdy** nie należy budować macierzy ocen explicite. Zwyczajnie nie zmieściłaby się ona do pamięci dla zbiorów o prawdziwym rozmiarze, kiedy mamy setki tysięcy użytkowników i przedmiotów. Dodatkowo zwyczajnie nie ma to sensu, bo nasze macierze prawie zawsze są **rzadkie (sparse)**, tzn. mają wypełnioną tylko nieznaczną liczbę pól. Reszta jest nieznana - w końcu pojedynczy człowiek obejrzy tylko niewielką część wszystkich filmów z Netflixa, nie mówiąc już o wystawieniu im ocen.
 
-# %% [markdown] slideshow={"slide_type": ""} tags=["ex"] editable=true
+# %% [markdown] editable=true slideshow={"slide_type": ""} tags=["ex"]
 # ## Zadanie 1 (0.5 punktu)
 #
 # Oblicz gęstość (density) macierzy ocen dla naszego zbioru danych. Jest to liczba ocen, podzielona przez rozmiar macierzy ocen (liczba użytkowników * liczba przedmiotów). Wynik przedstaw w procentach, zaokrąglony do 4 miejsc po przecinku. Pamiętaj, żeby uwzględnić tylko unikatowych użytkowników i przedmioty.
 
 # %% slideshow={"slide_type": ""} tags=["ex"]
-# your_code
-
+density = len(df) / (df["user_id"].nunique() * df["item_id"].nunique()) * 100
+density = round(density, 4)
+print(density)
 
 # %% slideshow={"slide_type": ""} tags=["ex"]
 assert 6 <= density <= 7
@@ -156,13 +157,19 @@ assert 6 <= density <= 7
 #
 # Zbadajmy teraz rozkład popularności poszczególnych przedmiotów w naszym zbiorze.
 
-# %% [markdown] slideshow={"slide_type": ""} tags=["ex"] editable=true
+# %% [markdown] editable=true slideshow={"slide_type": ""} tags=["ex"]
 # ## Zadanie 2 (0.5 punktu)
 #
 # Narysuj wykres popularności (liczby ocen) dla poszczególnych przedmiotów. Użyj odpowiednio dużej liczby kubełków histogramu, żeby zwizualizować kształt.
 
 # %% slideshow={"slide_type": ""} tags=["ex"]
 # your_code
+import matplotlib.pyplot as plt
+df["item_id"].value_counts()
+plt.hist(df["item_id"].value_counts(), bins=50)
+plt.xlabel("ID")
+plt.ylabel("Liczba ocen")
+plt.show()
 
 
 # %% [markdown]
@@ -242,6 +249,10 @@ class ItemAveragePredictor(AlgoBase):
         ...
 
         # your_code
+        self.ratings_ = {}
+        for id, rating in trainset.ir.items():
+            self.ratings_[id] = np.mean([r[1] for r in rating])
+        
         
         return self
 
@@ -250,7 +261,6 @@ class ItemAveragePredictor(AlgoBase):
             raise PredictionImpossible("User and/or item is unknown.")
 
         return self.ratings_[i]
-
 
 # %% slideshow={"slide_type": ""} tags=["ex"]
 algo = ItemAveragePredictor()
@@ -391,10 +401,17 @@ rec_item_avg
 
 # %% slideshow={"slide_type": ""} tags=["ex"]
 def ap_k(y_true: list[int], y_pred: list[int], k: int) -> float:
-    ...
+    pred_k = y_pred[:k]
+    corect = 0
+    suma = 0.0
+    for i, item in enumerate(pred_k):
+        if item in y_true[:k]:
+            corect += 1
+            suma += corect / (i + 1)
+    if corect == 0:
+        return 0.0
+    return suma / corect
     
-    # your_code
-
 
 
 # %% slideshow={"slide_type": ""} tags=["ex"]
@@ -508,7 +525,7 @@ assert 0.59 <= fcp_item_avg <= 0.62
 # - [bardzo wyrafinowane podejście oparte o dolną granicę błędu - dla odważnych](https://www.evanmiller.org/ranking-items-with-star-ratings.html)
 # - [średnia bayesowska dla danych zmiennych w czasie](https://www.evanmiller.org/bayesian-average-ratings.html)
 
-# %% [markdown] slideshow={"slide_type": ""} tags=["ex"] editable=true
+# %% [markdown] editable=true slideshow={"slide_type": ""} tags=["ex"]
 # ## Zadanie 5 (1 punkt)
 #
 # Uzupełnij kod klasy `BayesianAveragePredictor`. W metodzie `.fit()` musisz obliczyć parametry:
@@ -547,6 +564,11 @@ class BayesianAveragePredictor(AlgoBase):
         ...
 
         # your_code
+        for id, rating in trainset.ir.items():
+            self.ratings_counts_[id] = len(rating)
+            self.ratings_sums_[id] = sum([r[1] for r in rating])
+        
+        self.C = np.quantile(list(self.ratings_counts_.values()), 0.25)
         
         return self
 
@@ -558,7 +580,7 @@ class BayesianAveragePredictor(AlgoBase):
         ...
             
         # your_code
-        
+        score = (self.C*self.global_avg_ + self.ratings_sums_[i]) / (self.C + self.ratings_counts_[i])
         return score
 
 
@@ -591,6 +613,7 @@ assert 1 <= rmse(pred_bayes_avg, verbose=False) <= 1.1
 # %% [markdown] editable=true slideshow={"slide_type": ""}
 # // skomentuj tutaj
 #
+# Wartości są bardzo podobne i nie widać dużej różnicy.
 #
 
 # %% [markdown] editable=true slideshow={"slide_type": ""}
@@ -641,7 +664,7 @@ print_metrics(pred_knn_basic, rec_knn_basic)
 #
 # Drugim hiperparametrem jest **minimalna liczba sąsiadów `min_k`**. Jeżeli spośród `k` najbliższych sąsiadów mniej niż `min_k` oceniło dany przedmiot, to mamy zimny start. Zwykle wykorzystuje się wtedy algorytm globalny, np. przewidując globalną średnią. Jak widać, system rekomendacyjny składa się w środku z bardzo wielu systemów rekomendacyjnych :)
 
-# %% [markdown] slideshow={"slide_type": ""} tags=["ex"] editable=true
+# %% [markdown] editable=true slideshow={"slide_type": ""} tags=["ex"]
 # ## Zadanie 6 (1 punkt)
 #
 # Przeprowadź tuning hiperparametrów, używając 10-krotnej walidacji skrośnej i optymalizując MAE. Jako że nasz zbiór jest dość mały, to sprawdzimy zakres:
@@ -669,7 +692,23 @@ print_metrics(pred_knn_basic, rec_knn_basic)
 
 # %% slideshow={"slide_type": ""} tags=["ex"]
 # your_code
-
+param_grid = {
+    "k": list(range(10, 51, 10)),
+    "min_k": list(range(1, 4)),
+    "sim_options": {"name": ["pearson"]},
+    "random_state": [0],
+    "verbose": [False]
+}
+from surprise.model_selection import GridSearchCV
+gs = GridSearchCV(KNNBasic, param_grid, measures=["mae", "fcp"], n_jobs=-1, cv=10)
+gs.fit(data_train)
+best_params = gs.best_params["fcp"]
+best_model = gs.best_estimator["fcp"]
+best_model.fit(train_set)
+print(best_params)
+pred_knn_basic_tuned = best_model.test(test_set)
+rec = get_recommendations(pred_knn_basic_tuned)
+print_metrics(pred_knn_basic_tuned, rec)
 
 # %% slideshow={"slide_type": ""} tags=["ex"]
 assert 1 <= rmse(pred_knn_basic_tuned, verbose=False) <= 1.02
@@ -677,6 +716,7 @@ assert 1 <= rmse(pred_knn_basic_tuned, verbose=False) <= 1.02
 # %% [markdown] editable=true slideshow={"slide_type": ""} tags=["ex"]
 # // skomentuj tutaj
 #
+# wartości są zbliżone do wcześniejszych wartości.
 #
 
 # %% [markdown] editable=true slideshow={"slide_type": ""}
@@ -689,7 +729,7 @@ assert 1 <= rmse(pred_knn_basic_tuned, verbose=False) <= 1.02
 # \hat{r}_{ui} = \mu_i + \frac{\sum_{v \in N_i^k(u)} \text{sim}(u, v) * (r_{vi} - \mu_v)}{\sum_{v \in N_i^k(u)} \text{sim}(u, v)}
 # $$
 
-# %% [markdown] slideshow={"slide_type": ""} tags=["ex"] editable=true
+# %% [markdown] editable=true slideshow={"slide_type": ""} tags=["ex"]
 # ## Zadanie 7 (0.5 punktu)
 #
 # Analogicznie do poprzedniego zadania wytrenuj, zoptymalizuj i sprawdź na zbiorze treningowym user-based CF z centrowaniem (`KNNWithMeans`). Wypisz także optymalny zestaw hiperparametrów dla obu algorytmów.
@@ -698,7 +738,16 @@ assert 1 <= rmse(pred_knn_basic_tuned, verbose=False) <= 1.02
 
 # %% slideshow={"slide_type": ""} tags=["ex"]
 # your_code
-
+from surprise.prediction_algorithms.knns import KNNWithMeans
+gs_knn = GridSearchCV(KNNWithMeans, param_grid, measures=["mae", "fcp"], n_jobs=-1, cv=10)
+gs_knn.fit(data_train)
+best_params = gs_knn.best_params["fcp"]
+best_model = gs_knn.best_estimator["fcp"]
+best_model.fit(train_set)
+print(best_params)
+pred_knn_centered_tuned = best_model.test(test_set)
+rec = get_recommendations(pred_knn_centered_tuned)
+print_metrics(pred_knn_centered_tuned, rec)
 
 # %% slideshow={"slide_type": ""} tags=["ex"]
 assert 0.92 <= rmse(pred_knn_centered_tuned, verbose=False) <= 0.97
@@ -706,7 +755,7 @@ assert 0.92 <= rmse(pred_knn_centered_tuned, verbose=False) <= 0.97
 # %% [markdown] editable=true slideshow={"slide_type": ""} tags=["ex"]
 # // skomentuj tutaj
 #
-#
+# Hiperparametry okazały się takie same, wartość RMSE i MAE zmalała.
 
 # %% [markdown] editable=true slideshow={"slide_type": ""}
 # ## Item-based neighborhood-based CF
@@ -737,7 +786,32 @@ assert 0.92 <= rmse(pred_knn_centered_tuned, verbose=False) <= 0.97
 
 # %% slideshow={"slide_type": ""} tags=["ex"]
 # your_code
+param_grid = {
+    "k": list(range(10, 51, 10)),
+    "min_k": list(range(1, 4)),
+    "sim_options": {"name": ["cosine"], "user_based": [False]},
+    "random_state": [0],
+    "verbose": [False]
+}
 
+gs_item = GridSearchCV(KNNBasic, param_grid, measures=["mae", "fcp"], n_jobs=-1, cv=10)
+gs_item.fit(data_train)
+best_params = gs_item.best_params["fcp"]
+best_model = gs_item.best_estimator["fcp"]
+best_model.fit(train_set)
+print(best_params)
+pred_knn_item_tuned = best_model.test(test_set)
+rec = get_recommendations(pred_knn_item_tuned)
+print_metrics(pred_knn_item_tuned, rec)
+gs_item_centered = GridSearchCV(KNNWithMeans, param_grid, measures=["mae", "fcp"], n_jobs=-1, cv=10)
+gs_item_centered.fit(data_train)
+best_params = gs_item_centered.best_params["fcp"]
+best_model = gs_item_centered.best_estimator["fcp"]
+best_model.fit(train_set)
+print(best_params)
+pred_knn_item_centered_tuned = best_model.test(test_set)
+rec = get_recommendations(pred_knn_item_centered_tuned)
+print_metrics(pred_knn_item_centered_tuned, rec)
 
 # %% slideshow={"slide_type": ""} tags=["ex"]
 assert 1 <= rmse(pred_knn_item_tuned, verbose=False) <= 1.03
@@ -745,6 +819,7 @@ assert 0.92 <= rmse(pred_knn_item_centered_tuned, verbose=False) <= 0.97
 
 # %% [markdown] editable=true slideshow={"slide_type": ""}
 # // skomentuj tutaj
+# Bez centrowania wartość metryki MAP@k przyjęło zbliżoną wartość natomiast FCP@k jest znacząco niższe. Przy centrolowaniu wartości są podobne.
 #
 #
 
@@ -785,7 +860,7 @@ assert 0.92 <= rmse(pred_knn_item_centered_tuned, verbose=False) <= 0.97
 #
 # Załóżmy, że mamy $N$ użytkowników i $M$ przedmiotów. Kształty to zatem:
 # $$\large
-# \hat{R}_{N \times M} = W_{N \times K} U_{K \times N}^T
+# \hat{R}_{N \times M} = W_{N \times K} U_{K \times M}^T
 # $$
 #
 # Pojawił nam się nowy wymiar $K$ - każdy użytkownik to teraz wektor z macierzy $W$ o długości $K$, a każdy przedmiot to wektor z macierzy $U$ o długości $K$. Jest to **ukryta wymiarowość (latent dimensionality)**, stanowiąca hiperparametr, analogiczny np. do rozmiaru warstw sieci neuronowej. Nie są to interpretowalne cechy, ale można zauważyć przy dobrym modelu, że odwzorowują pewne ogólne tematy w danych. Przykładowo, dla filmów (przedmiotów) mogą oznaczać, jak dużo jest poszczególnych tematów w filmie, np. "romans", "komedia", "akcja". Dla użytkowników mogą oznaczać, w jak dużym stopniu użytkownik interesuje się danym tematem. Typowe wartości $K$ to około kilkadziesiąt-kilkaset. Ze względu na wykorzystanie latent dimension takie modele nazywa się też **latent factor models**.
@@ -876,7 +951,7 @@ print_metrics(pred_funk_svd, rec_funk_svd)
 # %% [markdown] slideshow={"slide_type": ""}
 # Wygląda to na bardzo dobry wynik, a nie dokonaliśmy jeszcze żadnego tuningu hiperparametrów.
 
-# %% [markdown] slideshow={"slide_type": ""} tags=["ex"] editable=true
+# %% [markdown] editable=true slideshow={"slide_type": ""} tags=["ex"]
 # ## Zadanie 9 (1 punkt)
 #
 # Zaimplementuj tuning hiperparametrów dla algorytmu FunkSVD, sprawdzając siatkę hiperparametrów:
@@ -893,8 +968,20 @@ print_metrics(pred_funk_svd, rec_funk_svd)
 # Skomentuj wyniki.
 
 # %% slideshow={"slide_type": ""} tags=["ex"]
-# your_code
-
+param_grid = {
+    "n_factors": list(range(50, 151, 10)),
+    "lr_all": [0.001, 0.003, 0.005, 0.007, 0.01],
+    "reg_all": [0.01, 0.02, 0.03]
+}
+gs_svd = GridSearchCV(SVD, param_grid, measures=["mae", "fcp"], n_jobs=-1, cv=10)
+gs_svd.fit(data_train)
+best_params = gs_svd.best_params["fcp"]
+best_model = gs_svd.best_estimator["fcp"]
+best_model.fit(train_set)
+print(best_params)
+pred_funk_svd_tuned = best_model.test(test_set)
+rec = get_recommendations(pred_funk_svd_tuned)
+print_metrics(pred_funk_svd_tuned, rec)
 
 # %% slideshow={"slide_type": ""} tags=["ex"]
 assert 0.9 <= rmse(pred_funk_svd_tuned, verbose=False) <= 0.95
@@ -902,7 +989,7 @@ assert 0.9 <= rmse(pred_funk_svd_tuned, verbose=False) <= 0.95
 # %% [markdown] editable=true slideshow={"slide_type": ""}
 # // skomentuj tutaj
 #
-#
+# Charakteryzuje się bardzo niskim RMSE i MAE w porówaniu do innych modeli.
 
 # %% [markdown] editable=true slideshow={"slide_type": ""}
 # ## Metody oparte o rozkład macierzy - podsumowanie
